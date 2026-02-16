@@ -1,11 +1,21 @@
-
 import streamlit as st
 import pandas as pd
 import numpy as np
-import joblib
 import matplotlib.pyplot as plt
-from sklearn.metrics import (
 
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler, OneHotEncoder
+from sklearn.compose import ColumnTransformer
+from sklearn.pipeline import Pipeline
+
+from sklearn.linear_model import LogisticRegression
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.naive_bayes import GaussianNB
+from sklearn.ensemble import RandomForestClassifier
+from xgboost import XGBClassifier
+
+from sklearn.metrics import (
     accuracy_score,
     precision_score,
     recall_score,
@@ -15,47 +25,113 @@ from sklearn.metrics import (
     confusion_matrix
 )
 
-st.set_page_config(page_title="Adult Income ML App", layout="wide")
+# ==============================
+# Streamlit Page Setup
+# ==============================
 
-st.title("Adult Income Classification App")
+st.set_page_config(page_title="Adult Income Classification", layout="wide")
+st.title("Adult Income Classification - ML Assignment 2")
 
-uploaded_file = st.file_uploader("Upload Test CSV File", type=["csv"])
+st.write("Upload the Adult Income CSV dataset (Test Data Only)")
+
+# ==============================
+# Upload CSV
+# ==============================
+
+uploaded_file = st.file_uploader("Upload CSV File", type=["csv"])
+
+# ==============================
+# Model Selection
+# ==============================
 
 model_name = st.selectbox(
-    "Select Model",
+    "Select Classification Model",
     [
-        "Logistic_Regression",
-        "Decision_Tree",
+        "Logistic Regression",
+        "Decision Tree",
         "KNN",
-        "Naive_Bayes",
-        "Random_Forest",
+        "Naive Bayes",
+        "Random Forest",
         "XGBoost"
     ]
 )
+
+# ==============================
+# Train Model Function
+# ==============================
+
+def train_model(model_name, X, y):
+
+    categorical_cols = X.select_dtypes(include=["object"]).columns
+    numerical_cols = X.select_dtypes(exclude=["object"]).columns
+
+    preprocessor = ColumnTransformer([
+        ("num", StandardScaler(), numerical_cols),
+        ("cat", OneHotEncoder(handle_unknown="ignore"), categorical_cols)
+    ])
+
+    models = {
+        "Logistic Regression": LogisticRegression(max_iter=1000),
+        "Decision Tree": DecisionTreeClassifier(),
+        "KNN": KNeighborsClassifier(),
+        "Naive Bayes": GaussianNB(),
+        "Random Forest": RandomForestClassifier(),
+        "XGBoost": XGBClassifier(eval_metric="logloss")
+    }
+
+    pipe = Pipeline([
+        ("preprocess", preprocessor),
+        ("model", models[model_name])
+    ])
+
+    pipe.fit(X, y)
+    return pipe
+
+
+# ==============================
+# Main Execution
+# ==============================
 
 if uploaded_file is not None:
 
     df = pd.read_csv(uploaded_file)
 
+    # Data Cleaning
     df.replace("?", np.nan, inplace=True)
     df.dropna(inplace=True)
 
+    # Encode target
     df["income"] = df["income"].map({"<=50K": 0, ">50K": 1})
 
     y = df["income"]
     X = df.drop("income", axis=1)
 
-    model = joblib.load(f"models/{model_name}.pkl")
+    # Split data (so evaluation is meaningful)
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, test_size=0.2, random_state=42
+    )
 
-    y_pred = model.predict(X)
-    y_prob = model.predict_proba(X)[:, 1]
+    # Train selected model
+    model = train_model(model_name, X_train, y_train)
 
-    acc = accuracy_score(y, y_pred)
-    auc = roc_auc_score(y, y_prob)
-    prec = precision_score(y, y_pred)
-    rec = recall_score(y, y_pred)
-    f1 = f1_score(y, y_pred)
-    mcc = matthews_corrcoef(y, y_pred)
+    # Predictions
+    y_pred = model.predict(X_test)
+
+    if hasattr(model, "predict_proba"):
+        y_prob = model.predict_proba(X_test)[:, 1]
+    else:
+        y_prob = y_pred
+
+    # ==============================
+    # Evaluation Metrics
+    # ==============================
+
+    acc = accuracy_score(y_test, y_pred)
+    auc = roc_auc_score(y_test, y_prob)
+    prec = precision_score(y_test, y_pred)
+    rec = recall_score(y_test, y_pred)
+    f1 = f1_score(y_test, y_pred)
+    mcc = matthews_corrcoef(y_test, y_pred)
 
     st.subheader("Evaluation Metrics")
 
@@ -69,28 +145,22 @@ if uploaded_file is not None:
     col5.metric("F1 Score", f"{f1:.4f}")
     col6.metric("MCC", f"{mcc:.4f}")
 
+    # ==============================
+    # Confusion Matrix
+    # ==============================
+
     st.subheader("Confusion Matrix")
 
-    cm = confusion_matrix(y, y_pred)
+    cm = confusion_matrix(y_test, y_pred)
 
     fig, ax = plt.subplots()
     ax.imshow(cm)
 
-    for i in range(2):
-        for j in range(2):
-            ax.text(j, i, cm[i, j],
-                    ha="center", va="center")
+    for i in range(cm.shape[0]):
+        for j in range(cm.shape[1]):
+            ax.text(j, i, cm[i, j], ha="center", va="center")
 
     ax.set_xlabel("Predicted")
     ax.set_ylabel("Actual")
 
     st.pyplot(fig)
-
-st.subheader("Model Comparison Table")
-
-try:
-    results = pd.read_csv("model_results.csv")
-    st.dataframe(results)
-except:
-    st.info("model_results.csv not found.")
-
