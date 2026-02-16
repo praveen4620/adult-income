@@ -26,13 +26,32 @@ from sklearn.metrics import (
 )
 
 # ==============================
-# Streamlit Page Setup
+# Page Setup
 # ==============================
 
 st.set_page_config(page_title="Adult Income Classification", layout="wide")
 st.title("Adult Income Classification - ML Assignment 2")
 
 st.write("Upload the Adult Income CSV dataset (Test Data Only)")
+
+# ==============================
+# Download Sample Test Data
+# ==============================
+
+st.subheader("Download Sample Test Data")
+
+try:
+    sample_df = pd.read_csv("adult.csv")
+    sample_df = sample_df.sample(200, random_state=42)
+
+    st.download_button(
+        label="Download Sample Test CSV",
+        data=sample_df.to_csv(index=False),
+        file_name="sample_test_data.csv",
+        mime="text/csv"
+    )
+except:
+    st.info("adult.csv not found in repository.")
 
 # ==============================
 # Upload CSV
@@ -67,7 +86,7 @@ def train_model(model_name, X, y):
 
     preprocessor = ColumnTransformer([
         ("num", StandardScaler(), numerical_cols),
-        ("cat", OneHotEncoder(handle_unknown="ignore"), categorical_cols)
+        ("cat", OneHotEncoder(handle_unknown="ignore", sparse_output=False), categorical_cols)
     ])
 
     models = {
@@ -87,34 +106,28 @@ def train_model(model_name, X, y):
     pipe.fit(X, y)
     return pipe
 
-
 # ==============================
-# Main Execution
+# Main Logic
 # ==============================
 
 if uploaded_file is not None:
 
     df = pd.read_csv(uploaded_file)
 
-    # Data Cleaning
     df.replace("?", np.nan, inplace=True)
     df.dropna(inplace=True)
 
-    # Encode target
     df["income"] = df["income"].map({"<=50K": 0, ">50K": 1})
 
     y = df["income"]
     X = df.drop("income", axis=1)
 
-    # Split data (so evaluation is meaningful)
     X_train, X_test, y_train, y_test = train_test_split(
         X, y, test_size=0.2, random_state=42
     )
 
-    # Train selected model
     model = train_model(model_name, X_train, y_train)
 
-    # Predictions
     y_pred = model.predict(X_test)
 
     if hasattr(model, "predict_proba"):
@@ -122,9 +135,7 @@ if uploaded_file is not None:
     else:
         y_prob = y_pred
 
-    # ==============================
-    # Evaluation Metrics
-    # ==============================
+    # ================= Metrics =================
 
     acc = accuracy_score(y_test, y_pred)
     auc = roc_auc_score(y_test, y_prob)
@@ -145,9 +156,7 @@ if uploaded_file is not None:
     col5.metric("F1 Score", f"{f1:.4f}")
     col6.metric("MCC", f"{mcc:.4f}")
 
-    # ==============================
-    # Confusion Matrix
-    # ==============================
+    # ================= Confusion Matrix =================
 
     st.subheader("Confusion Matrix")
 
